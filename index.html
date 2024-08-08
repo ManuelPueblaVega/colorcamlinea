@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Sound Camera</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        #videoElement, #canvasElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 2px;
+            height: 100%;
+            background-color: red;
+            opacity: 0.5;
+            transition: left 0.1s linear;
+        }
+        #toggleButton, #switchCameraButton {
+            position: absolute;
+            bottom: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        #toggleButton {
+            left: 20px;
+        }
+        #switchCameraButton {
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvasElement"></canvas>
+        <div id="line"></div>
+        <button id="toggleButton">Iniciar</button>
+        <button id="switchCameraButton">Cambiar Cámara</button>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const lineElement = document.getElementById('line');
+        const toggleButton = document.getElementById('toggleButton');
+        const switchCameraButton = document.getElementById('switchCameraButton');
+        const ctx = canvasElement.getContext('2d');
+
+        let isPlaying = false;
+        let linePosition = 0;
+        let currentCameraFacing = 'user'; // 'user' for front camera, 'environment' for back camera
+
+        const boomwhackerColors = [
+            { color: 'red', note: 'C', frequency: 261.63 },
+            { color: 'orange', note: 'D', frequency: 293.66 },
+            { color: 'yellow', note: 'E', frequency: 329.63 },
+            { color: 'green', note: 'F', frequency: 349.23 },
+            { color: 'lightblue', note: 'G', frequency: 392.00 },
+            { color: 'blue', note: 'A', frequency: 440.00 },
+            { color: 'purple', note: 'B', frequency: 493.88 }
+        ];
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: currentCameraFacing } 
+                });
+                videoElement.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing the camera:", err);
+            }
+        }
+
+        function playNote(frequency) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+            oscillator.connect(audioContext.destination);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        function isColorSimilar(detectedColor, targetColor) {
+            return detectedColor.toLowerCase().includes(targetColor.toLowerCase());
+        }
+
+        function detectColorAndPlaySound() {
+            ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+            const imageData = ctx.getImageData(linePosition, 0, 1, canvasElement.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                const detectedColor = `rgb(${r},${g},${b})`;
+                const matchedColor = boomwhackerColors.find(c => isColorSimilar(detectedColor, c.color));
+
+                if (matchedColor) {
+                    playNote(matchedColor.frequency);
+                    break;
+                }
+            }
+
+            linePosition = (linePosition + 1) % canvasElement.width;
+            lineElement.style.left = `${linePosition}px`;
+
+            if (isPlaying) {
+                requestAnimationFrame(detectColorAndPlaySound);
+            }
+        }
+
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            if (isPlaying) {
+                startCamera();
+                toggleButton.textContent = 'Detener';
+                detectColorAndPlaySound();
+            } else {
+                toggleButton.textContent = 'Iniciar';
+                if (videoElement.srcObject) {
+                    videoElement.srcObject.getTracks().forEach(track => track.stop());
+                }
+            }
+        }
+
+        async function switchCamera() {
+            if (videoElement.srcObject) {
+                videoElement.srcObject.getTracks().forEach(track => track.stop());
+            }
+            currentCameraFacing = currentCameraFacing === 'user' ? 'environment' : 'user';
+            await startCamera();
+        }
+
+        function resizeCanvas() {
+            canvasElement.width = window.innerWidth;
+            canvasElement.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        toggleButton.addEventListener('click', togglePlay);
+        switchCameraButton.addEventListener('click', switchCamera);
+    </script>
+</body>
+</html>
